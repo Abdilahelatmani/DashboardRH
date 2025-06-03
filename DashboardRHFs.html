@@ -578,6 +578,19 @@
                     <option value="">Toutes les nationalités</option>
                 </select>
             </div>
+<!-- 1. ADD THIS TO YOUR FILTERS SECTION (after the nationalité filter) -->
+<div class="filter-group">
+    <label class="filter-label">Statut Départ</label>
+    <select class="filter-select" id="departFilter">
+        <option value="">Tous les statuts</option>
+        <option value="Départ (à valider)">Départ (à valider)</option>
+        <option value="Départs Validés">Départs Validés</option>
+        <option value="Départs (Mai)">Départs (Mai)</option>
+        <option value="Départs (Juin)">Départs (Juin)</option>
+    </select>
+</div>
+            
+
             <button class="reset-filters" onclick="resetFilters()">Réinitialiser</button>
         </div>
     </div>
@@ -656,7 +669,7 @@
             <!-- Department Salary Distribution -->
             <div class="chart-container animated">
                 <div class="chart-header">
-                    <h3 class="chart-title">Longement par Département</h3>
+                    <h3 class="chart-title">Longement par Société</h3>
                     <div class="chart-actions">
                         <button class="chart-action" title="Exporter">📊</button>
                     </div>
@@ -741,6 +754,8 @@
                 </div>
             </div>
 
+
+            
             <!-- Personnel by Nationality Distribution
             <div class="chart-container animated">
                 <div class="chart-header">
@@ -955,7 +970,7 @@ function logout() {
         alert('Déconnexion réussie !');
         
         // Redirect to login page
-        window.location.href = 'login.html'; // Change to your login page name
+        window.location.href = 'index.html'; // Change to your login page name
     }
 }
 
@@ -1186,6 +1201,9 @@ resetInactivityTimer();
                 updateServiceFilter();
                 applyFilters();
             });
+            
+            document.getElementById('departFilter').addEventListener('change', applyFilters);
+
         }
 
         // Populate filter dropdown
@@ -1246,16 +1264,24 @@ resetInactivityTimer();
             const shiftFilter = document.getElementById('shiftFilter').value;
             const sexeFilter = document.getElementById('sexeFilter').value;
             const nationaliteFilter = document.getElementById('nationaliteFilter').value; // ADD THIS LINE
+    const departFilter = document.getElementById('departFilter').value; // NEW LINE
 
             filteredData = excelData.filter(row => {
+                       // Check departure status if filter is applied
+        let departureMatch = true;
+        if (departFilter) {
+            // Check if the person has this specific departure status (value = 1)
+            departureMatch = row[departFilter] === 1;
+        }
                 return (!yearFilter || row['Année'] == yearFilter) &&
                        (!societeFilter || row['Société'] == societeFilter) &&
                        (!departementFilter || row['Département'] == departementFilter) &&
-                       (!serviceFilter || row['Service / Fonction'] == serviceFilter) &&
+                       (!serviceFilter || row['Service'] == serviceFilter) &&
                        (!categorieFilter || row['Catégorie'] == categorieFilter) &&
                        (!shiftFilter || row['Shift'] == shiftFilter) &&
                        (!sexeFilter || row['Sexe'] == sexeFilter)&&
-                       (!nationaliteFilter || row['Nationalité'] == nationaliteFilter);
+                       (!nationaliteFilter || row['Nationalité'] == nationaliteFilter)&&
+               departureMatch; // NEW LINE
             });
 
             updateDashboard();
@@ -1341,17 +1367,27 @@ resetInactivityTimer();
         }
 
 
-function updateDepartCountByCategoryChart() {
+        function updateDepartCountByCategoryChart() {
     const ctx = document.getElementById('DepartCountDistributionChart').getContext('2d');
-
     const departs = ['Départ (à valider)', 'Départs Validés', 'Départs (Mai)', 'Départs (Juin)'];
     const departscount = [];
+    const departsSalary = [];
 
     departs.forEach(cat => {
+        // Count people in each departure category
         const count = filteredData.reduce((sum, row) => {
             return sum + ((row[cat] === 1) ? 1 : 0);
         }, 0);
         departscount.push(count);
+
+        // Calculate total salary for people in each departure category
+        const totalSalary = filteredData.reduce((sum, row) => {
+            if (row[cat] === 1) {
+                return sum + (row._totalSalary || 0);
+            }
+            return sum;
+        }, 0);
+        departsSalary.push(totalSalary);
     });
 
     const uniqueEmployees = getUniqueEmployees(filteredData);
@@ -1365,54 +1401,190 @@ function updateDepartCountByCategoryChart() {
         type: 'bar',
         data: {
             labels: departs,
-            datasets: [{
-                label: 'Nombre de personnes',
-                data: departscount,
-                backgroundColor: 'rgba(8, 115, 208, 0.6)',
-                borderColor: 'rgba(8, 115, 208, 1)',
-                borderWidth: 1,
-                borderRadius: 6
-            }]
+            datasets: [
+                {
+                    label: 'Nombre de personnes',
+                    data: departscount,
+                    backgroundColor: 'rgba(8, 115, 208, 0.6)',
+                    borderColor: 'rgba(8, 115, 208, 1)',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Salaire total (MAD)',
+                    data: departsSalary,
+                    backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    yAxisID: 'y1'
+                }
+            ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
             plugins: {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
+                            const datasetLabel = context.dataset.label;
                             const value = context.raw;
-                            const percentage = ((value / totalpers) * 100).toFixed(1);
-                            return `${value} personnes (${percentage}%)`;
+                            
+                            if (datasetLabel === 'Nombre de personnes') {
+                                const percentage = ((value / totalpers) * 100).toFixed(1);
+                                return `${datasetLabel}: ${value} personnes (${percentage}%)`;
+                            } else {
+                                return `${datasetLabel}: ${new Intl.NumberFormat('fr-FR', { 
+                                    style: 'currency', 
+                                    currency: 'MAD',
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0
+                                }).format(value)}`;
+                            }
                         }
                     }
+                },
+                legend: {
+                    display: true,
+                    position: 'top'
                 }
             },
             scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Catégories de départ'
+                    }
+                },
                 y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
                     beginAtZero: true,
                     title: {
                         display: true,
                         text: 'Nombre de personnes'
-                    }
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    },
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Salaire total (MAD)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return new Intl.NumberFormat('fr-FR', { 
+                                style: 'currency', 
+                                currency: 'MAD',
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
+                                notation: 'compact'
+                            }).format(value);
+                        }
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    },
                 }
             }
         }
     });
 }
 
+// function updateDepartCountByCategoryChart() {
+//     const ctx = document.getElementById('DepartCountDistributionChart').getContext('2d');
+
+//     const departs = ['Départ (à valider)', 'Départs Validés', 'Départs (Mai)', 'Départs (Juin)'];
+//     const departscount = [];
+
+//     departs.forEach(cat => {
+//         const count = filteredData.reduce((sum, row) => {
+//             return sum + ((row[cat] === 1) ? 1 : 0);
+//         }, 0);
+//         departscount.push(count);
+//     });
+
+//     const uniqueEmployees = getUniqueEmployees(filteredData);
+//     const totalpers = uniqueEmployees.length;
+
+//     if (charts.departCountByCategoryChart) {
+//         charts.departCountByCategoryChart.destroy();
+//     }
+
+//     charts.departCountByCategoryChart = new Chart(ctx, {
+//         type: 'bar',
+//         data: {
+//             labels: departs,
+//             datasets: [{
+//                 label: 'Nombre de personnes',
+//                 data: departscount,
+//                 backgroundColor: 'rgba(8, 115, 208, 0.6)',
+//                 borderColor: 'rgba(8, 115, 208, 1)',
+//                 borderWidth: 1,
+//                 borderRadius: 6
+//             }]
+//         },
+//         options: {
+//             responsive: true,
+//             maintainAspectRatio: false,
+//             plugins: {
+//                 tooltip: {
+//                     callbacks: {
+//                         label: function(context) {
+//                             const value = context.raw;
+//                             const percentage = ((value / totalpers) * 100).toFixed(1);
+//                             return `${value} personnes (${percentage}%)`;
+//                         }
+//                     }
+//                 }
+//             },
+//             scales: {
+//                 y: {
+//                     beginAtZero: true,
+//                     title: {
+//                         display: true,
+//                         text: 'Nombre de personnes'
+//                     }
+//                 }
+//             }
+//         }
+//     });
+// }
 
 function updateCountByCategoryChartt() {
     const ctxtt = document.getElementById('categorieEtudeDistributionChart').getContext('2d');
-
     const categories = ['Cadres (Bac +5)', 'Responsable', 'Ingénieur', 'Adjoint'];
-    const counts = [];
+    const categoriesCount = [];
+    const categoriesSalary = [];
 
     categories.forEach(cat => {
+        // Count people in each category
         const count = filteredData.reduce((sum, row) => {
             return sum + ((row[cat] === 1) ? 1 : 0);
         }, 0);
-        counts.push(count);
+        categoriesCount.push(count);
+
+        // Calculate total salary for people in each category
+        const totalSalary = filteredData.reduce((sum, row) => {
+            if (row[cat] === 1) {
+                return sum + (row._totalSalary || parseFloat(row['Salaire']) || 0);
+            }
+            return sum;
+        }, 0);
+        categoriesSalary.push(totalSalary);
     });
 
     const uniqueEmployees = getUniqueEmployees(filteredData);
@@ -1426,41 +1598,171 @@ function updateCountByCategoryChartt() {
         type: 'bar',
         data: {
             labels: categories,
-            datasets: [{
-                label: 'Nombre de personnes',
-                data: counts,
-                backgroundColor: 'rgba(8, 215, 191, 1)',
-                borderColor: 'rgba(8, 215, 191, 1)',
-                borderWidth: 1,
-                borderRadius: 6
-            }]
+            datasets: [
+                {
+                    label: 'Nombre de personnes',
+                    data: categoriesCount,
+                    backgroundColor: 'rgba(8, 215, 191, 0.6)',
+                    borderColor: 'rgba(8, 215, 191, 1)',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Salaire total (MAD)',
+                    data: categoriesSalary,
+                    backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    yAxisID: 'y1'
+                }
+            ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
             plugins: {
                 tooltip: {
                     callbacks: {
                         label: function(context) {
+                            const datasetLabel = context.dataset.label;
                             const value = context.raw;
-                            const percentage = ((value / totalpers) * 100).toFixed(1);
-                            return `${value} personnes (${percentage}%)`;
+                            
+                            if (datasetLabel === 'Nombre de personnes') {
+                                const percentage = ((value / totalpers) * 100).toFixed(1);
+                                return `${datasetLabel}: ${value} personnes (${percentage}%)`;
+                            } else {
+                                return `${datasetLabel}: ${new Intl.NumberFormat('fr-FR', { 
+                                    style: 'currency', 
+                                    currency: 'MAD',
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0
+                                }).format(value)}`;
+                            }
                         }
                     }
+                },
+                legend: {
+                    display: true,
+                    position: 'top'
                 }
             },
             scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Catégories d\'étude'
+                    },
+                    grid: {
+                        display: false
+                    }
+                },
                 y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
                     beginAtZero: true,
                     title: {
                         display: true,
                         text: 'Nombre de personnes'
-                    }
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    },
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Salaire total (MAD)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return new Intl.NumberFormat('fr-FR', { 
+                                style: 'currency', 
+                                currency: 'MAD',
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
+                                notation: 'compact'
+                            }).format(value);
+                        }
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    },
                 }
             }
         }
     });
 }
+
+// function updateCountByCategoryChartt() {
+//     const ctxtt = document.getElementById('categorieEtudeDistributionChart').getContext('2d');
+
+//     const categories = ['Cadres (Bac +5)', 'Responsable', 'Ingénieur', 'Adjoint'];
+//     const counts = [];
+
+//     categories.forEach(cat => {
+//         const count = filteredData.reduce((sum, row) => {
+//             return sum + ((row[cat] === 1) ? 1 : 0);
+//         }, 0);
+//         counts.push(count);
+//     });
+
+//     const uniqueEmployees = getUniqueEmployees(filteredData);
+//     const totalpers = uniqueEmployees.length;
+
+//     if (charts.personCountByCategory) {
+//         charts.personCountByCategory.destroy();
+//     }
+
+//     charts.personCountByCategory = new Chart(ctxtt, {
+//         type: 'bar',
+//         data: {
+//             labels: categories,
+//             datasets: [{
+//                 label: 'Nombre de personnes',
+//                 data: counts,
+//                 backgroundColor: 'rgba(8, 215, 191, 1)',
+//                 borderColor: 'rgba(8, 215, 191, 1)',
+//                 borderWidth: 1,
+//                 borderRadius: 6
+//             }]
+//         },
+//         options: {
+//             responsive: true,
+//             maintainAspectRatio: false,
+//             plugins: {
+//                 tooltip: {
+//                     callbacks: {
+//                         label: function(context) {
+//                             const value = context.raw;
+//                             const percentage = ((value / totalpers) * 100).toFixed(1);
+//                             return `${value} personnes (${percentage}%)`;
+//                         }
+//                     }
+//                 }
+//             },
+//             scales: {
+//                 y: {
+//                     beginAtZero: true,
+//                     title: {
+//                         display: true,
+//                         text: 'Nombre de personnes'
+//                     }
+//                 }
+//             }
+//         }
+//     });
+// }
 
 
         // Répartition par Sexe - CORRECTION POUR ÉVITER LES DOUBLONS
@@ -1537,154 +1839,449 @@ function updateCountByCategoryChartt() {
             });
         }
 
+// Répartition par Shift - AVEC NOMBRE ET SALAIRES (Same logic as depart function)
+function updateShiftDistributionChart() {
+    const ctx = document.getElementById('shiftDistributionChart').getContext('2d');
+    
+    // Get unique shifts dynamically from the data
+    const uniqueEmployees = getUniqueEmployees(filteredData);
+    const shifts = [...new Set(uniqueEmployees.map(row => row['Shift'] || 'Non spécifié'))];
+    
+    const shiftsCount = [];
+    const shiftsSalary = [];
+    
+    shifts.forEach(shift => {
+        // Count people in each shift
+        const count = uniqueEmployees.reduce((sum, row) => {
+            return sum + ((row['Shift'] === shift || (shift === 'Non spécifié' && !row['Shift'])) ? 1 : 0);
+        }, 0);
+        shiftsCount.push(count);
+        
+        // Calculate total salary for people in each shift
+        const totalSalary = uniqueEmployees.reduce((sum, row) => {
+            if (row['Shift'] === shift || (shift === 'Non spécifié' && !row['Shift'])) {
+                return sum + (row._totalSalary || parseFloat(row['Salaire']) || 0);
+            }
+            return sum;
+        }, 0);
+        shiftsSalary.push(totalSalary);
+    });
+    
+    const totalEmployees = uniqueEmployees.length;
+    
+    if (charts.shiftDistribution) {
+        charts.shiftDistribution.destroy();
+    }
+    
+    charts.shiftDistribution = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: shifts,
+            datasets: [
+                {
+                    label: 'Nombre de personnes',
+                    data: shiftsCount,
+                    backgroundColor: 'rgba(8, 115, 208, 0.6)',
+                    borderColor: 'rgba(8, 115, 208, 1)',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Salaire total (MAD)',
+                    data: shiftsSalary,
+                    backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const datasetLabel = context.dataset.label;
+                            const value = context.raw;
+                            
+                            if (datasetLabel === 'Nombre de personnes') {
+                                const percentage = ((value / totalEmployees) * 100).toFixed(1);
+                                return `${datasetLabel}: ${value} personnes (${percentage}%)`;
+                            } else {
+                                return `${datasetLabel}: ${new Intl.NumberFormat('fr-FR', { 
+                                    style: 'currency', 
+                                    currency: 'MAD',
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0
+                                }).format(value)}`;
+                            }
+                        }
+                    }
+                },
+                legend: {
+                    display: true,
+                    position: 'top'
+                }
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Shifts'
+                    },
+                    grid: {
+                        display: false
+                    }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Nombre de personnes'
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    },
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Salaire total (MAD)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return new Intl.NumberFormat('fr-FR', { 
+                                style: 'currency', 
+                                currency: 'MAD',
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
+                                notation: 'compact'
+                            }).format(value);
+                        }
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    },
+                }
+            }
+        }
+    });
+}
         // Répartition par Shift - CORRECTION POUR ÉVITER LES DOUBLONS
-        function updateShiftDistributionChart() {
-            const ctx = document.getElementById('shiftDistributionChart').getContext('2d');
-            const uniqueEmployees = getUniqueEmployees(filteredData);
+        // function updateShiftDistributionChart() {
+        //     const ctx = document.getElementById('shiftDistributionChart').getContext('2d');
+        //     const uniqueEmployees = getUniqueEmployees(filteredData);
             
-            const shiftCounts = {};
+        //     const shiftCounts = {};
             
-            uniqueEmployees.forEach(row => {
-                const shift = row['Shift'] || 'Non spécifié';
-                shiftCounts[shift] = (shiftCounts[shift] || 0) + 1;
-            });
+        //     uniqueEmployees.forEach(row => {
+        //         const shift = row['Shift'] || 'Non spécifié';
+        //         shiftCounts[shift] = (shiftCounts[shift] || 0) + 1;
+        //     });
 
-            const totalEmployees = uniqueEmployees.length; // ADD THIS LINE
+        //     const totalEmployees = uniqueEmployees.length; // ADD THIS LINE
 
 
-            if (charts.shiftDistribution) {
-                charts.shiftDistribution.destroy();
+        //     if (charts.shiftDistribution) {
+        //         charts.shiftDistribution.destroy();
+        //     }
+
+        //     charts.shiftDistribution = new Chart(ctx, {
+        //         type: 'bar',
+        //         data: {
+        //             labels: Object.keys(shiftCounts),
+        //             datasets: [{
+        //                 label: 'Nombre de personnes',
+        //                 data: Object.values(shiftCounts),
+        //                 backgroundColor: 'rgba(75, 192, 192, 0.6)',
+        //                 borderColor: 'rgba(75, 192, 192, 1)',
+        //                 borderWidth: 2,
+        //                 borderRadius: 8
+        //             }]
+        //         },
+        //         options: {
+        //             responsive: true,
+        //             maintainAspectRatio: false,
+        //             plugins: {
+        //                 legend: {
+        //                     display: false
+        //                 },
+        //                 tooltip: {
+        //                     backgroundColor: 'rgba(26, 26, 62, 0.9)',
+        //                     titleColor: '#fff',
+        //                     bodyColor: '#fff',
+        //                     borderColor: 'rgba(75, 192, 192, 0.5)',
+        //                     borderWidth: 1,
+        //                     padding: 12,
+        //                     callbacks: {
+        //                         label: function(context) {
+        //                             const value = context.parsed.y;
+        //                             const percentage = ((value / totalEmployees) * 100).toFixed(1);
+        //                             return `${value} employés (${percentage}%)`; // UPDATED THIS LINE
+        //                         }
+        //                     }
+        //                 }
+        //             },
+        //             scales: {
+        //                 y: {
+        //                     beginAtZero: true,
+        //                     grid: {
+        //                         color: 'rgba(75, 192, 192, 0.1)'
+        //                     }
+        //                 },
+        //                 x: {
+        //                     grid: {
+        //                         display: false
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     });
+        // }
+
+
+function updateDepartmentDistributionChart() {
+    const ctx = document.getElementById('departmentDistributionChart').getContext('2d');
+    const uniqueEmployees = getUniqueEmployees(filteredData);
+    
+    // Get unique departments dynamically from the data
+    const departments = [...new Set(uniqueEmployees.map(row => row['Département'] || 'Non spécifié'))];
+    
+    const deptCount = [];
+    const deptSalary = [];
+    
+    departments.forEach(dept => {
+        // Count people in each department
+        const count = uniqueEmployees.reduce((sum, row) => {
+            return sum + ((row['Département'] === dept || (dept === 'Non spécifié' && !row['Département'])) ? 1 : 0);
+        }, 0);
+        deptCount.push(count);
+        
+        // Calculate total salary for people in each department
+        const totalSalary = uniqueEmployees.reduce((sum, row) => {
+            if (row['Département'] === dept || (dept === 'Non spécifié' && !row['Département'])) {
+                return sum + (row._totalSalary || parseFloat(row['Salaire']) || 0);
             }
+            return sum;
+        }, 0);
+        deptSalary.push(totalSalary);
+    });
+    
+    // Sort departments by employee count (descending) and take top 10
+    const deptData = departments.map((dept, index) => ({
+        name: dept,
+        count: deptCount[index],
+        salary: deptSalary[index]
+    })).sort((a, b) => b.count - a.count).slice(0, 10);
+    
+    const sortedDepts = deptData.map(d => d.name);
+    const sortedCounts = deptData.map(d => d.count);
+    const sortedSalaries = deptData.map(d => d.salary);
+    
+    const totalEmployees = uniqueEmployees.length;
 
-            charts.shiftDistribution = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: Object.keys(shiftCounts),
-                    datasets: [{
-                        label: 'Nombre de personnes',
-                        data: Object.values(shiftCounts),
-                        backgroundColor: 'rgba(75, 192, 192, 0.6)',
-                        borderColor: 'rgba(75, 192, 192, 1)',
-                        borderWidth: 2,
-                        borderRadius: 8
-                    }]
+    if (charts.departmentDistribution) {
+        charts.departmentDistribution.destroy();
+    }
+
+    charts.departmentDistribution = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: sortedDepts,
+            datasets: [
+                {
+                    label: 'Nombre de personnes',
+                    data: sortedCounts,
+                    backgroundColor: 'rgba(8, 115, 208, 0.6)',
+                    borderColor: 'rgba(8, 115, 208, 1)',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    yAxisID: 'y'
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            backgroundColor: 'rgba(26, 26, 62, 0.9)',
-                            titleColor: '#fff',
-                            bodyColor: '#fff',
-                            borderColor: 'rgba(75, 192, 192, 0.5)',
-                            borderWidth: 1,
-                            padding: 12,
-                            callbacks: {
-                                label: function(context) {
-                                    const value = context.parsed.y;
-                                    const percentage = ((value / totalEmployees) * 100).toFixed(1);
-                                    return `${value} employés (${percentage}%)`; // UPDATED THIS LINE
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            grid: {
-                                color: 'rgba(75, 192, 192, 0.1)'
-                            }
-                        },
-                        x: {
-                            grid: {
-                                display: false
+                {
+                    label: 'Salaire total (MAD)',
+                    data: sortedSalaries,
+                    backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    yAxisID: 'y1'
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const datasetLabel = context.dataset.label;
+                            const value = context.raw;
+                            
+                            if (datasetLabel === 'Nombre de personnes') {
+                                const percentage = ((value / totalEmployees) * 100).toFixed(1);
+                                return `${datasetLabel}: ${value} personnes (${percentage}%)`;
+                            } else {
+                                return `${datasetLabel}: ${new Intl.NumberFormat('fr-FR', { 
+                                    style: 'currency', 
+                                    currency: 'MAD',
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0
+                                }).format(value)}`;
                             }
                         }
                     }
+                },
+                legend: {
+                    display: true,
+                    position: 'top'
                 }
-            });
+            },
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Départements (Top 10)'
+                    }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Nombre de personnes'
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    },
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Salaire total (MAD)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return new Intl.NumberFormat('fr-FR', { 
+                                style: 'currency', 
+                                currency: 'MAD',
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
+                                notation: 'compact'
+                            }).format(value);
+                        }
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    },
+                }
+            }
         }
-
+    });
+}
+        
         // Répartition par Département - CORRECTION POUR ÉVITER LES DOUBLONS
-        function updateDepartmentDistributionChart() {
-            const ctx = document.getElementById('departmentDistributionChart').getContext('2d');
-            const uniqueEmployees = getUniqueEmployees(filteredData);
+        // function updateDepartmentDistributionChart() {
+        //     const ctx = document.getElementById('departmentDistributionChart').getContext('2d');
+        //     const uniqueEmployees = getUniqueEmployees(filteredData);
             
-            const deptCounts = {};
+        //     const deptCounts = {};
             
-            uniqueEmployees.forEach(row => {
-                const dept = row['Département'] || 'Non spécifié';
-                deptCounts[dept] = (deptCounts[dept] || 0) + 1;
-            });
+        //     uniqueEmployees.forEach(row => {
+        //         const dept = row['Département'] || 'Non spécifié';
+        //         deptCounts[dept] = (deptCounts[dept] || 0) + 1;
+        //     });
 
-            // Trier et prendre les 10 premiers départements
-            const sortedDepts = Object.entries(deptCounts)
-                .sort((a, b) => b[1] - a[1])
-                .slice(0, 10);
+        //     // Trier et prendre les 10 premiers départements
+        //     const sortedDepts = Object.entries(deptCounts)
+        //         .sort((a, b) => b[1] - a[1])
+        //         .slice(0, 10);
 
-            const totalEmployees = uniqueEmployees.length; // ADD THIS LINE
+        //     const totalEmployees = uniqueEmployees.length; // ADD THIS LINE
 
-            if (charts.departmentDistribution) {
-                charts.departmentDistribution.destroy();
-            }
+        //     if (charts.departmentDistribution) {
+        //         charts.departmentDistribution.destroy();
+        //     }
 
-            charts.departmentDistribution = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: sortedDepts.map(d => d[0]),
-                    datasets: [{
-                        label: 'Nombre de personnes',
-                        data: sortedDepts.map(d => d[1]),
-                        backgroundColor: 'rgba(153, 102, 255, 0.6)',
-                        borderColor: 'rgba(153, 102, 255, 1)',
-                        borderWidth: 2,
-                        borderRadius: 8
-                    }]
-                },
-                options: {
-                    indexAxis: 'y',
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            display: false
-                        },
-                        tooltip: {
-                            backgroundColor: 'rgba(26, 26, 62, 0.9)',
-                            titleColor: '#fff',
-                            bodyColor: '#fff',
-                            borderColor: 'rgba(153, 102, 255, 0.5)',
-                            borderWidth: 1,
-                            padding: 12,
-                            callbacks: {
-                                label: function(context) {
-                                    const value = context.parsed.x;
-                                    const percentage = ((value / totalEmployees) * 100).toFixed(1);
-                                    return `${value} employés (${percentage}%)`; // UPDATED THIS LINE
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            beginAtZero: true,
-                            grid: {
-                                color: 'rgba(153, 102, 255, 0.1)'
-                            }
-                        },
-                        y: {
-                            grid: {
-                                display: false
-                            }
-                        }
-                    }
-                }
-            });
-        }
+        //     charts.departmentDistribution = new Chart(ctx, {
+        //         type: 'bar',
+        //         data: {
+        //             labels: sortedDepts.map(d => d[0]),
+        //             datasets: [{
+        //                 label: 'Nombre de personnes',
+        //                 data: sortedDepts.map(d => d[1]),
+        //                 backgroundColor: 'rgba(153, 102, 255, 0.6)',
+        //                 borderColor: 'rgba(153, 102, 255, 1)',
+        //                 borderWidth: 2,
+        //                 borderRadius: 8
+        //             }]
+        //         },
+        //         options: {
+        //             indexAxis: 'y',
+        //             responsive: true,
+        //             maintainAspectRatio: false,
+        //             plugins: {
+        //                 legend: {
+        //                     display: false
+        //                 },
+        //                 tooltip: {
+        //                     backgroundColor: 'rgba(26, 26, 62, 0.9)',
+        //                     titleColor: '#fff',
+        //                     bodyColor: '#fff',
+        //                     borderColor: 'rgba(153, 102, 255, 0.5)',
+        //                     borderWidth: 1,
+        //                     padding: 12,
+        //                     callbacks: {
+        //                         label: function(context) {
+        //                             const value = context.parsed.x;
+        //                             const percentage = ((value / totalEmployees) * 100).toFixed(1);
+        //                             return `${value} employés (${percentage}%)`; // UPDATED THIS LINE
+        //                         }
+        //                     }
+        //                 }
+        //             },
+        //             scales: {
+        //                 x: {
+        //                     beginAtZero: true,
+        //                     grid: {
+        //                         color: 'rgba(153, 102, 255, 0.1)'
+        //                     }
+        //                 },
+        //                 y: {
+        //                     grid: {
+        //                         display: false
+        //                     }
+        //                 }
+        //             }
+        //         }
+        //     });
+        // }
 
         // Nouvelle Répartition par Service
         function updateServiceDistributionChart() {
@@ -1766,83 +2363,248 @@ function updateCountByCategoryChartt() {
 
 function updateDepartmentHousingChart() {
     const ctx = document.getElementById('departmentLongementChart').getContext('2d');
-
-    const deptHousing = {};
-
-    filteredData.forEach(row => {
-        const dept = row['Département'] || 'Non spécifié';
-        const logement = row['Logement de F.'] || row['Montant Logement'] || 0;
-
-        if (!deptHousing[dept]) {
-            deptHousing[dept] = 0;
-        }
-
-        deptHousing[dept] += logement;
+    
+    // Get unique departments dynamically from the data
+    const uniqueEmployees = getUniqueEmployees(filteredData);
+    const departments = [...new Set(uniqueEmployees.map(row => row['Société'] || 'Non spécifié'))];
+    
+    const deptCount = [];
+    const deptHousingAmount = [];
+    
+    departments.forEach(dept => {
+        // Count people in each department WHO HAVE HOUSING (logement > 0)
+        const count = uniqueEmployees.reduce((sum, row) => {
+            const isInDept = (row['Société'] === dept || (dept === 'Non spécifié' && !row['Société']));
+            const logement = parseFloat(row['Logement de F.']) || parseFloat(row['Montant Logement']) || 0;
+            const hasHousing = logement > 0;
+            
+            return sum + (isInDept && hasHousing ? 1 : 0);
+        }, 0);
+        deptCount.push(count);
+        
+        // Calculate total housing amount for people in each department WHO HAVE HOUSING
+        const totalHousing = uniqueEmployees.reduce((sum, row) => {
+            const isInDept = (row['Société'] === dept || (dept === 'Non spécifié' && !row['Société']));
+            const logement = parseFloat(row['Logement de F.']) || parseFloat(row['Montant Logement']) || 0;
+            
+            if (isInDept && logement > 0) {
+                return sum + logement;
+            }
+            return sum;
+        }, 0);
+        deptHousingAmount.push(totalHousing);
     });
-
-    const sortedDepts = Object.entries(deptHousing)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10);
-
+    
+    // Sort departments by housing amount (descending) and take top 10
+    const deptData = departments.map((dept, index) => ({
+        name: dept,
+        count: deptCount[index],
+        housing: deptHousingAmount[index]
+    })).sort((a, b) => b.housing - a.housing).slice(0, 10);
+    
+    const sortedDepts = deptData.map(d => d.name);
+    const sortedCounts = deptData.map(d => d.count);
+    const sortedHousing = deptData.map(d => d.housing);
+    
+    // Calculate total employees WITH HOUSING for percentage calculation
+    const totalEmployeesWithHousing = uniqueEmployees.reduce((sum, row) => {
+        const logement = parseFloat(row['Logement de F.']) || parseFloat(row['Montant Logement']) || 0;
+        return sum + (logement > 0 ? 1 : 0);
+    }, 0);
+    
     if (charts.departmentHousing) {
         charts.departmentHousing.destroy();
     }
-
+    
     charts.departmentHousing = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: sortedDepts.map(d => d[0]),
-            datasets: [{
-                label: 'Montant Total des Logements',
-                data: sortedDepts.map(d => d[1]),
-                backgroundColor: 'rgba(34, 197, 94, 0.6)',
-                borderColor: 'rgba(34, 197, 94, 1)',
-                borderWidth: 2,
-                borderRadius: 8
-            }]
+            labels: sortedDepts,
+            datasets: [
+                {
+                    label: 'Personnes avec logement',
+                    data: sortedCounts,
+                    backgroundColor: 'rgba(8, 115, 208, 0.6)',
+                    borderColor: 'rgba(8, 115, 208, 1)',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    yAxisID: 'y'
+                },
+                {
+                    label: 'Montant Total Logements (MAD)',
+                    data: sortedHousing,
+                    backgroundColor: 'rgba(34, 197, 94, 0.6)',
+                    borderColor: 'rgba(34, 197, 94, 1)',
+                    borderWidth: 1,
+                    borderRadius: 6,
+                    yAxisID: 'y1'
+                }
+            ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
             plugins: {
-                legend: {
-                    display: false
-                },
                 tooltip: {
-                    backgroundColor: 'rgba(26, 26, 62, 0.9)',
-                    titleColor: '#fff',
-                    bodyColor: '#fff',
-                    borderColor: 'rgba(34, 197, 94, 0.5)',
-                    borderWidth: 1,
-                    padding: 12,
                     callbacks: {
                         label: function(context) {
-                            return 'Montant total: ' + formatCurrency(context.parsed.y);
+                            const datasetLabel = context.dataset.label;
+                            const value = context.raw;
+                            
+                            if (datasetLabel === 'Personnes avec logement') {
+                                const percentage = ((value / totalEmployeesWithHousing) * 100).toFixed(1);
+                                return `${datasetLabel}: ${value} personnes avec logement (${percentage}%)`;
+                            } else {
+                                return `${datasetLabel}: ${new Intl.NumberFormat('fr-FR', { 
+                                    style: 'currency', 
+                                    currency: 'MAD',
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0
+                                }).format(value)}`;
+                            }
                         }
                     }
+                },
+                legend: {
+                    display: true,
+                    position: 'top'
                 }
             },
             scales: {
-                y: {
-                    beginAtZero: true,
-                    grid: {
-                        color: 'rgba(34, 197, 94, 0.1)'
-                    },
-                    ticks: {
-                        callback: function(value) {
-                            return formatCurrency(value);
-                        }
-                    }
-                },
                 x: {
+                    title: {
+                        display: true,
+                        text: 'Départements (Top 10)'
+                    },
                     grid: {
                         display: false
                     }
+                },
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Personnes avec logement'
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    },
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Montant Total Logements (MAD)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return new Intl.NumberFormat('fr-FR', { 
+                                style: 'currency', 
+                                currency: 'MAD',
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0,
+                                notation: 'compact'
+                            }).format(value);
+                        }
+                    },
+                    grid: {
+                        drawOnChartArea: false,
+                    },
                 }
             }
         }
     });
 }
+        
+// function updateDepartmentHousingChart() {
+//     const ctx = document.getElementById('departmentLongementChart').getContext('2d');
+
+//     const deptHousing = {};
+
+//     filteredData.forEach(row => {
+//         const dept = row['Société'] || 'Non spécifié';
+//         const logement = row['Logement de F.'] || row['Montant Logement'] || 0;
+
+//         if (!deptHousing[dept]) {
+//             deptHousing[dept] = 0;
+//         }
+
+//         deptHousing[dept] += logement;
+//     });
+
+//     const sortedDepts = Object.entries(deptHousing)
+//         .sort((a, b) => b[1] - a[1])
+//         .slice(0, 10);
+
+//     if (charts.departmentHousing) {
+//         charts.departmentHousing.destroy();
+//     }
+
+//     charts.departmentHousing = new Chart(ctx, {
+//         type: 'bar',
+//         data: {
+//             labels: sortedDepts.map(d => d[0]),
+//             datasets: [{
+//                 label: 'Montant Total des Logements',
+//                 data: sortedDepts.map(d => d[1]),
+//                 backgroundColor: 'rgba(34, 197, 94, 0.6)',
+//                 borderColor: 'rgba(34, 197, 94, 1)',
+//                 borderWidth: 2,
+//                 borderRadius: 8
+//             }]
+//         },
+//         options: {
+//             responsive: true,
+//             maintainAspectRatio: false,
+//             plugins: {
+//                 legend: {
+//                     display: false
+//                 },
+//                 tooltip: {
+//                     backgroundColor: 'rgba(26, 26, 62, 0.9)',
+//                     titleColor: '#fff',
+//                     bodyColor: '#fff',
+//                     borderColor: 'rgba(34, 197, 94, 0.5)',
+//                     borderWidth: 1,
+//                     padding: 12,
+//                     callbacks: {
+//                         label: function(context) {
+//                             return 'Montant total: ' + formatCurrency(context.parsed.y);
+//                         }
+//                     }
+//                 }
+//             },
+//             scales: {
+//                 y: {
+//                     beginAtZero: true,
+//                     grid: {
+//                         color: 'rgba(34, 197, 94, 0.1)'
+//                     },
+//                     ticks: {
+//                         callback: function(value) {
+//                             return formatCurrency(value);
+//                         }
+//                     }
+//                 },
+//                 x: {
+//                     grid: {
+//                         display: false
+//                     }
+//                 }
+//             }
+//         }
+//     });
+// }
 
 
 
