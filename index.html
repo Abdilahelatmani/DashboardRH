@@ -439,11 +439,19 @@
     </div>
 
     <script>
-        // Login credentials
-        const VALID_CREDENTIALS = {
-            username: 'admin',
-            password: 'admin'
-        };
+        // Login credentials with different redirect pages
+        const VALID_CREDENTIALS = [
+            {
+                username: 'admin',
+                password: 'admin',
+                redirectPage: 'dashbordRHSameModOrig.html'
+            },
+            {
+                username: 'admin',
+                password: '123456',
+                redirectPage: 'DashboardRHFs.html'
+            }
+        ];
 
         // DOM Elements
         const loginForm = document.getElementById('loginForm');
@@ -457,7 +465,13 @@
         // Check if user is already logged in
         window.addEventListener('load', () => {
             if (sessionStorage.getItem('isLoggedIn') === 'true') {
-                redirectToDashboard();
+                const savedRedirectPage = sessionStorage.getItem('redirectPage');
+                if (savedRedirectPage) {
+                    window.location.href = savedRedirectPage;
+                } else {
+                    // Default fallback
+                    window.location.href = 'dashbordRHSameModOrig.html';
+                }
             }
             
             // Check for remembered credentials
@@ -488,12 +502,17 @@
             // Simulate API call delay for better UX
             await new Promise(resolve => setTimeout(resolve, 1000));
             
-            // Validate credentials
-            if (username === VALID_CREDENTIALS.username && password === VALID_CREDENTIALS.password) {
+            // Find matching credentials
+            const matchingCredential = VALID_CREDENTIALS.find(
+                cred => cred.username === username && cred.password === password
+            );
+            
+            if (matchingCredential) {
                 // Successful login
                 sessionStorage.setItem('isLoggedIn', 'true');
                 sessionStorage.setItem('username', username);
                 sessionStorage.setItem('loginTime', new Date().toISOString());
+                sessionStorage.setItem('redirectPage', matchingCredential.redirectPage);
                 
                 // Handle remember me
                 if (rememberMe.checked) {
@@ -504,7 +523,7 @@
                 
                 // Show success and redirect
                 showSuccess();
-                setTimeout(redirectToDashboard, 1500);
+                setTimeout(() => redirectToDashboard(matchingCredential.redirectPage), 1500);
             } else {
                 // Failed login
                 setLoadingState(false);
@@ -555,9 +574,8 @@
         }
 
         // Redirect to dashboard
-        function redirectToDashboard() {
-            // Redirect to your specific dashboard page
-            window.location.href = 'dashbordRHSameModOrig.html';
+        function redirectToDashboard(page) {
+            window.location.href = page;
         }
 
         // Input animations
