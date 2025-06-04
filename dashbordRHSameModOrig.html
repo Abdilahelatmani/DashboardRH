@@ -963,11 +963,11 @@
 // Session management and security
 window.addEventListener('load', function() {
     // Check if user is logged in
-    if (sessionStorage.getItem('isLoggedIn') !== 'true') {
-        alert('Accès non autorisé. Redirection vers la page de connexion...');
-        window.location.href = 'Login.html'; // Change to your login page name
-        return;
-    }
+    // if (sessionStorage.getItem('isLoggedIn') !== 'true') {
+    //     alert('Accès non autorisé. Redirection vers la page de connexion...');
+    //     window.location.href = 'Login.html'; // Change to your login page name
+    //     return;
+    // }
     
     // Display user info
     const username = sessionStorage.getItem('username') || 'Utilisateur';
@@ -1328,15 +1328,17 @@ resetInactivityTimer();
 
         }
 
-// NEW: Update Summary Table
+// Update Summary Table - MODIFIED for ETP
 function updateSummaryTable() {
     const summaryTableBody = document.getElementById('summaryTableBody');
     const summarySearchBox = document.getElementById('summarySearchBox');
     
+    // Get adjusted workforce
+    const adjustedEmployees = getAdjustedWorkforce(filteredData);
+    
     // Group data by department and service
     const summaryData = {};
     
-    // Group by department and service
     filteredData.forEach(row => {
         const dept = row['Département'] || 'Non spécifié';
         const service = row['Service / Fonction'] || 'Non spécifié';
@@ -1347,14 +1349,26 @@ function updateSummaryTable() {
                 department: dept,
                 service: service,
                 employeeIds: new Set(),
-                totalSalary: 0
+                totalSalary: 0,
+                totalETP: 0
             };
         }
         
-        // Add employee ID to set (to count unique employees)
+        // Add employee ID to set
         summaryData[key].employeeIds.add(row._id);
         // Add salary
         summaryData[key].totalSalary += (row._totalSalary || 0);
+    });
+    
+    // Calculate ETP for each group
+    Object.keys(summaryData).forEach(key => {
+        const groupEmployees = adjustedEmployees.filter(emp => {
+            const dept = emp['Département'] || 'Non spécifié';
+            const service = emp['Service / Fonction'] || 'Non spécifié';
+            return key === `${dept}|${service}`;
+        });
+        
+        summaryData[key].totalETP = groupEmployees.reduce((sum, emp) => sum + emp.etp, 0);
     });
     
     // Convert to array and sort by total salary
@@ -1362,10 +1376,11 @@ function updateSummaryTable() {
         department: item.department,
         service: item.service,
         employeeCount: item.employeeIds.size,
+        totalETP: item.totalETP,
         totalSalary: item.totalSalary
     })).sort((a, b) => b.totalSalary - a.totalSalary);
     
-    // Apply search filter if there's a search term
+    // Apply search filter
     if (summarySearchBox && summarySearchBox.value) {
         const searchTerm = summarySearchBox.value.toLowerCase();
         summaryArray = summaryArray.filter(item => 
@@ -1383,7 +1398,7 @@ function updateSummaryTable() {
         tr.innerHTML = `
             <td>${item.department}</td>
             <td>${item.service}</td>
-            <td class="count-cell">${item.employeeCount}</td>
+            <td class="count-cell">${item.employeeCount} <small>(${item.totalETP.toFixed(1)} ETP)</small></td>
             <td class="salary-cell">${formatCurrency(item.totalSalary)}</td>
         `;
         summaryTableBody.appendChild(tr);
@@ -1392,6 +1407,7 @@ function updateSummaryTable() {
     // Add totals row
     if (summaryArray.length > 0) {
         const totalEmployees = summaryArray.reduce((sum, item) => sum + item.employeeCount, 0);
+        const totalETP = summaryArray.reduce((sum, item) => sum + item.totalETP, 0);
         const totalSalaries = summaryArray.reduce((sum, item) => sum + item.totalSalary, 0);
         
         const totalRow = document.createElement('tr');
@@ -1400,56 +1416,86 @@ function updateSummaryTable() {
         totalRow.style.fontWeight = 'bold';
         totalRow.innerHTML = `
             <td colspan="2" style="text-align: center;">TOTAL</td>
-            <td class="count-cell">${totalEmployees}</td>
+            <td class="count-cell">${totalEmployees} <small>(${totalETP.toFixed(1)} ETP)</small></td>
             <td class="salary-cell">${formatCurrency(totalSalaries)}</td>
         `;
         summaryTableBody.appendChild(totalRow);
     }
 }
 
-        // Update KPI cards
-        function updateKPIs() {
-            // Total employees sans doublons (basé sur l'identifiant unique)
-            const uniqueEmployees = getUniqueEmployees(filteredData);
+// NEW: Calculate adjusted workforce (ETP)
+function getAdjustedWorkforce(data) {
+    const adjustedData = new Map();
+    const months = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 
+                   'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+    
+    data.forEach(row => {
+        const id = row._id;
+        if (!adjustedData.has(id)) {
+            // Count months worked (months with salary > 0)
+            let monthsWorked = 0;
+            months.forEach(month => {
+                const value = cleanNumericValue(row[month]);
+                if (value > 0) {
+                    monthsWorked++;
+                }
+            });
             
-            document.getElementById('totalEmployees').textContent = uniqueEmployees.length;
-
-            // Total salaire (somme de tous les salaires totaux)
-            const totalSalary = filteredData.reduce((sum, row) => sum + (row._totalSalary || 0), 0);
-            document.getElementById('totalSalary').textContent = formatCurrency(totalSalary);
-
-            // Calcul des taux homme/femme
-            const femaleCount = uniqueEmployees.filter(row => row['Sexe'] === 'Femme').length;
-            const maleCount = uniqueEmployees.filter(row => row['Sexe'] === 'Homme').length;
-            const totalCount = femaleCount + maleCount;
-
-            const femalePercentage = totalCount > 0 ? 
-                (femaleCount / totalCount * 100).toFixed(1) : 0;
+            // Calculate ETP (Equivalent Full Time)
+            const etp = monthsWorked / 12;
             
-            const malePercentage = totalCount > 0 ? 
-                (maleCount / totalCount * 100).toFixed(1) : 0;
-
-            // Mise à jour de l'affichage
-            document.getElementById('femalePercentage').innerHTML = 
-                `<span style="color: #ec4899">F: ${femalePercentage}%</span><br>
-                 <span style="color: #3b82f6">H: ${malePercentage}%</span>`;
-            
-
-// Sum all annual salaries and divide by number of employees, then by 12 for monthly
-const totalAnnualSalary = filteredData.reduce((sum, row) => sum + (row._totalSalary || 0), 0);
-const avgMonthlySalary = uniqueEmployees.length > 0 ? 
-    totalAnnualSalary / uniqueEmployees.length / 12 : 0;
-
-document.getElementById('avgSalary').textContent = formatCurrency(avgMonthlySalary);
-
-            // // Average salary - CORRECTION: diviser par 12 pour obtenir la moyenne mensuelle
-            // const totalMonthlySalary = filteredData.reduce((sum, row) => {
-            //     return sum + (row._totalSalary || 0) / 12;
-            // }, 0);
-            
-            // const avgSalary = filteredData.length > 0 ? totalMonthlySalary / filteredData.length : 0;
-            // document.getElementById('avgSalary').textContent = formatCurrency(avgSalary);
+            adjustedData.set(id, {
+                ...row,
+                monthsWorked: monthsWorked,
+                etp: etp
+            });
         }
+    });
+    
+    return Array.from(adjustedData.values());
+}
+
+        // Update KPI cards
+// Update KPI cards - MODIFIED for ETP
+function updateKPIs() {
+    // Get adjusted workforce
+    const adjustedEmployees = getAdjustedWorkforce(filteredData);
+    
+    // Total ETP instead of raw count
+    const totalETP = adjustedEmployees.reduce((sum, emp) => sum + emp.etp, 0);
+    document.getElementById('totalEmployees').textContent = totalETP.toFixed(1) + ' ETP';
+
+    // Total salaire (somme de tous les salaires totaux)
+    const totalSalary = filteredData.reduce((sum, row) => sum + (row._totalSalary || 0), 0);
+    document.getElementById('totalSalary').textContent = formatCurrency(totalSalary);
+
+    // Calcul des taux homme/femme basé sur ETP
+    const femaleETP = adjustedEmployees
+        .filter(row => row['Sexe'] === 'Femme')
+        .reduce((sum, emp) => sum + emp.etp, 0);
+    const maleETP = adjustedEmployees
+        .filter(row => row['Sexe'] === 'Homme')
+        .reduce((sum, emp) => sum + emp.etp, 0);
+    const totalETPGender = femaleETP + maleETP;
+
+    const femalePercentage = totalETPGender > 0 ? 
+        (femaleETP / totalETPGender * 100).toFixed(1) : 0;
+    
+    const malePercentage = totalETPGender > 0 ? 
+        (maleETP / totalETPGender * 100).toFixed(1) : 0;
+
+    // Mise à jour de l'affichage
+    document.getElementById('femalePercentage').innerHTML = 
+        `<span style="color: #ec4899">F: ${femalePercentage}%</span><br>
+         <span style="color: #3b82f6">H: ${malePercentage}%</span>`;
+    
+    // Average salary based on ETP
+    const totalAnnualSalary = filteredData.reduce((sum, row) => sum + (row._totalSalary || 0), 0);
+    const avgMonthlySalary = totalETP > 0 ? 
+        totalAnnualSalary / totalETP / 12 : 0;
+
+    document.getElementById('avgSalary').textContent = formatCurrency(avgMonthlySalary);
+}
 
         // Update all charts
         function updateCharts() {
@@ -1474,6 +1520,7 @@ updateCategoryEvolutionChart();
 
 
 // NEW: Department Evolution Chart
+// Department Evolution Chart - MODIFIED for ETP
 function updateDepartmentEvolutionChart() {
     const ctx = document.getElementById('departmentEvolutionChart').getContext('2d');
     
@@ -1489,13 +1536,19 @@ function updateDepartmentEvolutionChart() {
             yearlyData[key] = {
                 year: year,
                 department: dept,
-                uniqueEmployees: new Set(),
+                employees: [],
                 totalSalary: 0
             };
         }
         
-        yearlyData[key].uniqueEmployees.add(row._id);
+        yearlyData[key].employees.push(row);
         yearlyData[key].totalSalary += (row._totalSalary || 0);
+    });
+    
+    // Calculate ETP for each year/department
+    Object.keys(yearlyData).forEach(key => {
+        const adjustedEmployees = getAdjustedWorkforce(yearlyData[key].employees);
+        yearlyData[key].totalETP = adjustedEmployees.reduce((sum, emp) => sum + emp.etp, 0);
     });
     
     if (charts.departmentEvolution) {
@@ -1521,9 +1574,9 @@ function updateDepartmentEvolutionChart() {
     const colors = ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
     
     topDepts.forEach((dept, index) => {
-        const deptPersonnelData = years.map(year => {
+        const deptETPData = years.map(year => {
             const key = `${year}_${dept}`;
-            return yearlyData[key] ? yearlyData[key].uniqueEmployees.size : 0;
+            return yearlyData[key] ? yearlyData[key].totalETP : 0;
         });
         
         const deptSalaryData = years.map(year => {
@@ -1532,8 +1585,8 @@ function updateDepartmentEvolutionChart() {
         });
         
         datasets.push({
-            label: `${dept} - Personnel`,
-            data: deptPersonnelData,
+            label: `${dept} - ETP`,
+            data: deptETPData,
             borderColor: colors[index],
             backgroundColor: colors[index] + '20',
             borderWidth: 2,
@@ -1562,13 +1615,22 @@ function updateDepartmentEvolutionChart() {
             plugins: {
                 title: {
                     display: true,
-                    text: 'Évolution Top 5 Départements',
+                    text: 'Évolution Top 5 Départements (ETP)',
                     color: '#fff'
                 },
                 tooltip: {
                     backgroundColor: 'rgba(26, 26, 62, 0.9)',
                     titleColor: '#fff',
-                    bodyColor: '#fff'
+                    bodyColor: '#fff',
+                    callbacks: {
+                        label: function(context) {
+                            if (context.dataset.label.includes('ETP')) {
+                                return `${context.dataset.label}: ${context.parsed.y.toFixed(1)} ETP`;
+                            } else {
+                                return `${context.dataset.label}: ${formatCurrency(context.parsed.y)}`;
+                            }
+                        }
+                    }
                 }
             },
             scales: {
@@ -1583,7 +1645,7 @@ function updateDepartmentEvolutionChart() {
                     type: 'linear',
                     display: true,
                     position: 'right',
-                    title: { display: true, text: 'Personnel', color: '#10b981' },
+                    title: { display: true, text: 'ETP', color: '#10b981' },
                     grid: { drawOnChartArea: false }
                 }
             }
@@ -2061,78 +2123,77 @@ function updateNationalityPersonnelChart() {
 // }
 
         // Répartition par Sexe - CORRECTION POUR ÉVITER LES DOUBLONS
-        function updateSexeDistributionChart() {
-            const ctx = document.getElementById('sexeDistributionChart').getContext('2d');
-            const uniqueEmployees = getUniqueEmployees(filteredData);
-            
-            const sexeCounts = {
-                'Homme': 0,
-                'Femme': 0,
-                'Non spécifié': 0
-            };
-            
-            uniqueEmployees.forEach(row => {
-                const sexe = row['Sexe'] || 'Non spécifié';
-                sexeCounts[sexe] = (sexeCounts[sexe] || 0) + 1;
-            });
+// Répartition par Sexe - MODIFIED for ETP
+function updateSexeDistributionChart() {
+    const ctx = document.getElementById('sexeDistributionChart').getContext('2d');
+    const adjustedEmployees = getAdjustedWorkforce(filteredData);
+    
+    const sexeETP = {
+        'Homme': 0,
+        'Femme': 0,
+        'Non spécifié': 0
+    };
+    
+    adjustedEmployees.forEach(row => {
+        const sexe = row['Sexe'] || 'Non spécifié';
+        sexeETP[sexe] += row.etp;
+    });
 
-            if (charts.sexeDistribution) {
-                charts.sexeDistribution.destroy();
-            }
+    if (charts.sexeDistribution) {
+        charts.sexeDistribution.destroy();
+    }
 
-            charts.sexeDistribution = new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: Object.keys(sexeCounts),
-                    datasets: [{
-                        data: Object.values(sexeCounts),
-                        backgroundColor: [
-                            'rgba(54, 162, 235, 0.8)', // Hommes
-                            'rgba(255, 99, 132, 0.8)', // Femmes
-                            'rgba(201, 203, 207, 0.8)' // Autres
-                        ],
-                        borderColor: [
-                            'rgba(54, 162, 235, 1)',
-                            'rgba(255, 99, 132, 1)',
-                            'rgba(201, 203, 207, 1)'
-                        ],
-                        borderWidth: 2
-                    }]
+    charts.sexeDistribution = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: Object.keys(sexeETP),
+            datasets: [{
+                data: Object.values(sexeETP),
+                backgroundColor: [
+                    'rgba(54, 162, 235, 0.8)',
+                    'rgba(255, 99, 132, 0.8)',
+                    'rgba(201, 203, 207, 0.8)'
+                ],
+                borderColor: [
+                    'rgba(54, 162, 235, 1)',
+                    'rgba(255, 99, 132, 1)',
+                    'rgba(201, 203, 207, 1)'
+                ],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 20,
+                        font: { size: 12 }
+                    }
                 },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                padding: 20,
-                                font: {
-                                    size: 12
-                                }
-                            }
-                        },
-                        tooltip: {
-                            backgroundColor: 'rgba(26, 26, 62, 0.9)',
-                            titleColor: '#fff',
-                            bodyColor: '#fff',
-                            borderColor: 'rgba(102, 126, 234, 0.5)',
-                            borderWidth: 1,
-                            padding: 12,
-                            callbacks: {
-                                label: function(context) {
-                                    const label = context.label || '';
-                                    const value = context.parsed;
-                                    const total = context.chart.getDatasetMeta(0).total;
-                                    const percentage = ((value / total) * 100).toFixed(1);
-                                    return `${label}: ${value} (${percentage}%)`;
-                                }
-                            }
+                tooltip: {
+                    backgroundColor: 'rgba(26, 26, 62, 0.9)',
+                    titleColor: '#fff',
+                    bodyColor: '#fff',
+                    borderColor: 'rgba(102, 126, 234, 0.5)',
+                    borderWidth: 1,
+                    padding: 12,
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.parsed;
+                            const total = Object.values(sexeETP).reduce((sum, v) => sum + v, 0);
+                            const percentage = ((value / total) * 100).toFixed(1);
+                            return `${label}: ${value.toFixed(1)} ETP (${percentage}%)`;
                         }
                     }
                 }
-            });
+            }
         }
+    });
+}
 
         // Répartition par Shift - CORRECTION POUR ÉVITER LES DOUBLONS
         function updateShiftDistributionChart() {
