@@ -497,6 +497,58 @@
             z-index: 10000;
             border: 1px solid #667eea;
         }
+        /* Summary Table Styles */
+.summary-table-container {
+    background: rgba(26, 26, 62, 0.6);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 30px;
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(102, 126, 234, 0.2);
+    overflow: hidden;
+    margin-bottom: 40px;
+}
+
+.summary-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.summary-table th {
+    background: rgba(102, 126, 234, 0.3);
+    padding: 15px;
+    text-align: left;
+    font-weight: 600;
+    color: #fff;
+    text-transform: uppercase;
+    font-size: 12px;
+    letter-spacing: 1px;
+    border-bottom: 2px solid rgba(102, 126, 234, 0.5);
+}
+
+.summary-table td {
+    padding: 15px;
+    border-bottom: 1px solid rgba(102, 126, 234, 0.1);
+    color: #e0e0e0;
+}
+
+.summary-table tr:hover {
+    background: rgba(102, 126, 234, 0.1);
+}
+
+.summary-table tr:nth-child(even) {
+    background: rgba(102, 126, 234, 0.05);
+}
+
+.salary-cell {
+    font-weight: 600;
+    color: #10b981;
+}
+
+.count-cell {
+    font-weight: 600;
+    color: #667eea;
+}
     </style>
 </head>
 <body>
@@ -768,6 +820,45 @@
                 </div>
             </div>
 
+            <!-- NEW: Department Evolution Chart -->
+<div class="chart-container full-width animated">
+    <div class="chart-header">
+        <h3 class="chart-title">📈 Évolution par Département (Personnel & Salaires)</h3>
+        <div class="chart-actions">
+            <button class="chart-action" title="Exporter">📊</button>
+        </div>
+    </div>
+    <div class="chart-wrapper">
+        <canvas id="departmentEvolutionChart"></canvas>
+    </div>
+</div>
+
+<!-- NEW: Service Evolution Chart -->
+<div class="chart-container full-width animated">
+    <div class="chart-header">
+        <h3 class="chart-title">📈 Évolution par Service (Personnel & Salaires)</h3>
+        <div class="chart-actions">
+            <button class="chart-action" title="Exporter">📊</button>
+        </div>
+    </div>
+    <div class="chart-wrapper">
+        <canvas id="serviceEvolutionChart"></canvas>
+    </div>
+</div>
+
+<!-- NEW: Category Evolution Chart -->
+<div class="chart-container full-width animated">
+    <div class="chart-header">
+        <h3 class="chart-title">📈 Évolution par Catégorie (Personnel & Salaires)</h3>
+        <div class="chart-actions">
+            <button class="chart-action" title="Exporter">📊</button>
+        </div>
+    </div>
+    <div class="chart-wrapper">
+        <canvas id="categoryEvolutionChart"></canvas>
+    </div>
+</div>
+
             <!-- Personnel Evolution Chart - ADD THIS -->
             <!-- <div class="chart-container full-width animated">
                 <div class="chart-header">
@@ -782,6 +873,29 @@
             </div> -->
 
         </div>
+
+        <!-- Department Summary Table -->
+<div class="summary-table-container animated">
+    <div class="table-header">
+        <h3 class="chart-title">📊 Récapitulatif par Département & Service</h3>
+        <input type="text" class="search-box" id="summarySearchBox" placeholder="Rechercher département ou service...">
+    </div>
+    <div class="table-wrapper">
+        <table class="summary-table" id="summaryTable">
+            <thead>
+                <tr>
+                    <th>Département</th>
+                    <th>Service / Fonction</th>
+                    <th>Nombre de Personnes</th>
+                    <th>Total Salaires</th>
+                </tr>
+            </thead>
+            <tbody id="summaryTableBody">
+                <!-- Summary rows will be populated here -->
+            </tbody>
+        </table>
+    </div>
+</div>
 
         <!-- Data Table -->
         <div class="table-container animated">
@@ -833,11 +947,11 @@
         <div class="spinner"></div>
     </div>
     
-    <!-- Debug Panel -->
+    <!-- Debug Panel
     <div class="debug-panel" id="debugPanel">
         <strong>Debug Console</strong>
         <div id="debugOutput"></div>
-    </div>
+    </div> -->
 
     <script>
         // Global variables
@@ -851,7 +965,7 @@ window.addEventListener('load', function() {
     // Check if user is logged in
     if (sessionStorage.getItem('isLoggedIn') !== 'true') {
         alert('Accès non autorisé. Redirection vers la page de connexion...');
-        window.location.href = 'index.html'; // Change to your login page name
+        window.location.href = 'Login.html'; // Change to your login page name
         return;
     }
     
@@ -906,7 +1020,13 @@ document.addEventListener('DOMContentLoaded', function() {
             this.style.transform = 'translateY(0)';
             this.style.boxShadow = 'none';
         });
+        
     }
+        const summarySearchBox = document.getElementById('summarySearchBox');
+    if (summarySearchBox) {
+        summarySearchBox.addEventListener('input', updateSummaryTable);
+    }
+
 });
 
 // Optional: Auto-logout after inactivity (30 minutes)
@@ -1204,7 +1324,88 @@ resetInactivityTimer();
             updateKPIs();
             updateCharts();
             updateTable();
+            updateSummaryTable();
+
         }
+
+// NEW: Update Summary Table
+function updateSummaryTable() {
+    const summaryTableBody = document.getElementById('summaryTableBody');
+    const summarySearchBox = document.getElementById('summarySearchBox');
+    
+    // Group data by department and service
+    const summaryData = {};
+    
+    // Group by department and service
+    filteredData.forEach(row => {
+        const dept = row['Département'] || 'Non spécifié';
+        const service = row['Service / Fonction'] || 'Non spécifié';
+        const key = `${dept}|${service}`;
+        
+        if (!summaryData[key]) {
+            summaryData[key] = {
+                department: dept,
+                service: service,
+                employeeIds: new Set(),
+                totalSalary: 0
+            };
+        }
+        
+        // Add employee ID to set (to count unique employees)
+        summaryData[key].employeeIds.add(row._id);
+        // Add salary
+        summaryData[key].totalSalary += (row._totalSalary || 0);
+    });
+    
+    // Convert to array and sort by total salary
+    let summaryArray = Object.values(summaryData).map(item => ({
+        department: item.department,
+        service: item.service,
+        employeeCount: item.employeeIds.size,
+        totalSalary: item.totalSalary
+    })).sort((a, b) => b.totalSalary - a.totalSalary);
+    
+    // Apply search filter if there's a search term
+    if (summarySearchBox && summarySearchBox.value) {
+        const searchTerm = summarySearchBox.value.toLowerCase();
+        summaryArray = summaryArray.filter(item => 
+            item.department.toLowerCase().includes(searchTerm) || 
+            item.service.toLowerCase().includes(searchTerm)
+        );
+    }
+    
+    // Clear existing rows
+    summaryTableBody.innerHTML = '';
+    
+    // Add new rows
+    summaryArray.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${item.department}</td>
+            <td>${item.service}</td>
+            <td class="count-cell">${item.employeeCount}</td>
+            <td class="salary-cell">${formatCurrency(item.totalSalary)}</td>
+        `;
+        summaryTableBody.appendChild(tr);
+    });
+    
+    // Add totals row
+    if (summaryArray.length > 0) {
+        const totalEmployees = summaryArray.reduce((sum, item) => sum + item.employeeCount, 0);
+        const totalSalaries = summaryArray.reduce((sum, item) => sum + item.totalSalary, 0);
+        
+        const totalRow = document.createElement('tr');
+        totalRow.style.borderTop = '2px solid rgba(102, 126, 234, 0.5)';
+        totalRow.style.backgroundColor = 'rgba(102, 126, 234, 0.1)';
+        totalRow.style.fontWeight = 'bold';
+        totalRow.innerHTML = `
+            <td colspan="2" style="text-align: center;">TOTAL</td>
+            <td class="count-cell">${totalEmployees}</td>
+            <td class="salary-cell">${formatCurrency(totalSalaries)}</td>
+        `;
+        summaryTableBody.appendChild(totalRow);
+    }
+}
 
         // Update KPI cards
         function updateKPIs() {
@@ -1265,7 +1466,352 @@ document.getElementById('avgSalary').textContent = formatCurrency(avgMonthlySala
             //updatePersonnelEvolutionChart(); // ADD THIS LINE
             updateNationalitySalaryChart(); // ADD THIS LINE
             updateNationalityPersonnelChart(); // ADD THIS LINE
+            // Ajoutez ces lignes dans votre fonction updateCharts() existante :
+updateDepartmentEvolutionChart();
+updateServiceEvolutionChart();
+updateCategoryEvolutionChart();
         }
+
+
+// NEW: Department Evolution Chart
+function updateDepartmentEvolutionChart() {
+    const ctx = document.getElementById('departmentEvolutionChart').getContext('2d');
+    
+    // Group by year and department from filtered data
+    const yearlyData = {};
+    
+    filteredData.forEach(row => {
+        const year = row['Année'] || 'Non spécifié';
+        const dept = row['Département'] || 'Non spécifié';
+        const key = `${year}_${dept}`;
+        
+        if (!yearlyData[key]) {
+            yearlyData[key] = {
+                year: year,
+                department: dept,
+                uniqueEmployees: new Set(),
+                totalSalary: 0
+            };
+        }
+        
+        yearlyData[key].uniqueEmployees.add(row._id);
+        yearlyData[key].totalSalary += (row._totalSalary || 0);
+    });
+    
+    if (charts.departmentEvolution) {
+        charts.departmentEvolution.destroy();
+    }
+    
+    // Get top 5 departments by total salary
+    const deptTotals = {};
+    Object.values(yearlyData).forEach(item => {
+        if (!deptTotals[item.department]) {
+            deptTotals[item.department] = 0;
+        }
+        deptTotals[item.department] += item.totalSalary;
+    });
+    
+    const topDepts = Object.entries(deptTotals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(entry => entry[0]);
+    
+    const years = [...new Set(Object.values(yearlyData).map(item => item.year))].sort();
+    const datasets = [];
+    const colors = ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+    
+    topDepts.forEach((dept, index) => {
+        const deptPersonnelData = years.map(year => {
+            const key = `${year}_${dept}`;
+            return yearlyData[key] ? yearlyData[key].uniqueEmployees.size : 0;
+        });
+        
+        const deptSalaryData = years.map(year => {
+            const key = `${year}_${dept}`;
+            return yearlyData[key] ? yearlyData[key].totalSalary : 0;
+        });
+        
+        datasets.push({
+            label: `${dept} - Personnel`,
+            data: deptPersonnelData,
+            borderColor: colors[index],
+            backgroundColor: colors[index] + '20',
+            borderWidth: 2,
+            tension: 0.3,
+            yAxisID: 'y1'
+        });
+        
+        datasets.push({
+            label: `${dept} - Salaires`,
+            data: deptSalaryData,
+            borderColor: colors[index],
+            backgroundColor: colors[index] + '40',
+            borderWidth: 2,
+            tension: 0.3,
+            borderDash: [5, 5],
+            yAxisID: 'y'
+        });
+    });
+    
+    charts.departmentEvolution = new Chart(ctx, {
+        type: 'line',
+        data: { labels: years, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Évolution Top 5 Départements',
+                    color: '#fff'
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(26, 26, 62, 0.9)',
+                    titleColor: '#fff',
+                    bodyColor: '#fff'
+                }
+            },
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: { display: true, text: 'Masse Salariale', color: '#667eea' },
+                    ticks: { callback: value => formatCurrency(value) }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: { display: true, text: 'Personnel', color: '#10b981' },
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
+}
+
+// NEW: Service Evolution Chart
+function updateServiceEvolutionChart() {
+    const ctx = document.getElementById('serviceEvolutionChart').getContext('2d');
+    
+    const yearlyData = {};
+    
+    filteredData.forEach(row => {
+        const year = row['Année'] || 'Non spécifié';
+        const service = row['Service / Fonction'] || 'Non spécifié';
+        const key = `${year}_${service}`;
+        
+        if (!yearlyData[key]) {
+            yearlyData[key] = {
+                year: year,
+                service: service,
+                uniqueEmployees: new Set(),
+                totalSalary: 0
+            };
+        }
+        
+        yearlyData[key].uniqueEmployees.add(row._id);
+        yearlyData[key].totalSalary += (row._totalSalary || 0);
+    });
+    
+    if (charts.serviceEvolution) {
+        charts.serviceEvolution.destroy();
+    }
+    
+    // Get top 5 services by total salary
+    const serviceTotals = {};
+    Object.values(yearlyData).forEach(item => {
+        if (!serviceTotals[item.service]) {
+            serviceTotals[item.service] = 0;
+        }
+        serviceTotals[item.service] += item.totalSalary;
+    });
+    
+    const topServices = Object.entries(serviceTotals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .map(entry => entry[0]);
+    
+    const years = [...new Set(Object.values(yearlyData).map(item => item.year))].sort();
+    const datasets = [];
+    const colors = ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
+    
+    topServices.forEach((service, index) => {
+        const servicePersonnelData = years.map(year => {
+            const key = `${year}_${service}`;
+            return yearlyData[key] ? yearlyData[key].uniqueEmployees.size : 0;
+        });
+        
+        const serviceSalaryData = years.map(year => {
+            const key = `${year}_${service}`;
+            return yearlyData[key] ? yearlyData[key].totalSalary : 0;
+        });
+        
+        datasets.push({
+            label: `${service} - Personnel`,
+            data: servicePersonnelData,
+            borderColor: colors[index],
+            backgroundColor: colors[index] + '20',
+            borderWidth: 2,
+            tension: 0.3,
+            yAxisID: 'y1'
+        });
+        
+        datasets.push({
+            label: `${service} - Salaires`,
+            data: serviceSalaryData,
+            borderColor: colors[index],
+            backgroundColor: colors[index] + '40',
+            borderWidth: 2,
+            tension: 0.3,
+            borderDash: [5, 5],
+            yAxisID: 'y'
+        });
+    });
+    
+    charts.serviceEvolution = new Chart(ctx, {
+        type: 'line',
+        data: { labels: years, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Évolution Top 5 Services',
+                    color: '#fff'
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(26, 26, 62, 0.9)',
+                    titleColor: '#fff',
+                    bodyColor: '#fff'
+                }
+            },
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: { display: true, text: 'Masse Salariale', color: '#667eea' },
+                    ticks: { callback: value => formatCurrency(value) }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: { display: true, text: 'Personnel', color: '#10b981' },
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
+}
+
+// NEW: Category Evolution Chart
+function updateCategoryEvolutionChart() {
+    const ctx = document.getElementById('categoryEvolutionChart').getContext('2d');
+    
+    const yearlyData = {};
+    
+    filteredData.forEach(row => {
+        const year = row['Année'] || 'Non spécifié';
+        const category = row['Catégorie'] || 'Non spécifié';
+        const key = `${year}_${category}`;
+        
+        if (!yearlyData[key]) {
+            yearlyData[key] = {
+                year: year,
+                category: category,
+                uniqueEmployees: new Set(),
+                totalSalary: 0
+            };
+        }
+        
+        yearlyData[key].uniqueEmployees.add(row._id);
+        yearlyData[key].totalSalary += (row._totalSalary || 0);
+    });
+    
+    if (charts.categoryEvolution) {
+        charts.categoryEvolution.destroy();
+    }
+    
+    // Get all categories
+    const categories = [...new Set(filteredData.map(row => row['Catégorie'] || 'Non spécifié'))];
+    const years = [...new Set(Object.values(yearlyData).map(item => item.year))].sort();
+    const datasets = [];
+    const colors = ['#667eea', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#84cc16'];
+    
+    categories.forEach((category, index) => {
+        const categoryPersonnelData = years.map(year => {
+            const key = `${year}_${category}`;
+            return yearlyData[key] ? yearlyData[key].uniqueEmployees.size : 0;
+        });
+        
+        const categorySalaryData = years.map(year => {
+            const key = `${year}_${category}`;
+            return yearlyData[key] ? yearlyData[key].totalSalary : 0;
+        });
+        
+        datasets.push({
+            label: `${category} - Personnel`,
+            data: categoryPersonnelData,
+            borderColor: colors[index % colors.length],
+            backgroundColor: (colors[index % colors.length]) + '20',
+            borderWidth: 2,
+            tension: 0.3,
+            yAxisID: 'y1'
+        });
+        
+        datasets.push({
+            label: `${category} - Salaires`,
+            data: categorySalaryData,
+            borderColor: colors[index % colors.length],
+            backgroundColor: (colors[index % colors.length]) + '40',
+            borderWidth: 2,
+            tension: 0.3,
+            borderDash: [5, 5],
+            yAxisID: 'y'
+        });
+    });
+    
+    charts.categoryEvolution = new Chart(ctx, {
+        type: 'line',
+        data: { labels: years, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Évolution par Catégorie',
+                    color: '#fff'
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(26, 26, 62, 0.9)',
+                    titleColor: '#fff',
+                    bodyColor: '#fff'
+                }
+            },
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: { display: true, text: 'Masse Salariale', color: '#667eea' },
+                    ticks: { callback: value => formatCurrency(value) }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: { display: true, text: 'Personnel', color: '#10b981' },
+                    grid: { drawOnChartArea: false }
+                }
+            }
+        }
+    });
+}
 
 
 // Nationality Salary Chart
@@ -2583,16 +3129,16 @@ function updateAnnualSalaryTrendChart() {
         });
 
         // Debug function to log to the debug panel
-        function debugLog(message) {
-            const debugOutput = document.getElementById('debugOutput');
-            const entry = document.createElement('div');
-            entry.textContent = message;
-            debugOutput.appendChild(entry);
-            debugOutput.scrollTop = debugOutput.scrollHeight;
-        }
+        // function debugLog(message) {
+        //     const debugOutput = document.getElementById('debugOutput');
+        //     const entry = document.createElement('div');
+        //     entry.textContent = message;
+        //     debugOutput.appendChild(entry);
+        //     debugOutput.scrollTop = debugOutput.scrollHeight;
+        // }
 
-        // Initialize debug panel
-        debugLog("Système initialisé. Prêt à charger un fichier Excel.");
+        // // Initialize debug panel
+        // debugLog("Système initialisé. Prêt à charger un fichier Excel.");
 
     </script>
 </body>
