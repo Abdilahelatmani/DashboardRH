@@ -918,18 +918,13 @@
         <!-- Department Summary Table -->
 <div class="summary-table-container animated">
     <div class="table-header">
-        <h3 class="chart-title">📊 Récapitulatif par Département & Service</h3>
+        <h3 class="chart-title">📊 Récapitulatif par Département & Service (par Année)</h3>
         <input type="text" class="search-box" id="summarySearchBox" placeholder="Rechercher département ou service...">
     </div>
     <div class="table-wrapper">
         <table class="summary-table" id="summaryTable">
-            <thead>
-                <tr>
-                    <th>Département</th>
-                    <th>Service / Fonction</th>
-                    <th>Nombre de Personnes</th>
-                    <th>Total Salaires</th>
-                </tr>
+            <thead id="summaryTableHead">
+                <!-- Headers will be dynamically generated -->
             </thead>
             <tbody id="summaryTableBody">
                 <!-- Summary rows will be populated here -->
@@ -1369,32 +1364,51 @@ resetInactivityTimer();
 
         }
 
-// NEW: Update Summary Table
+
 function updateSummaryTable() {
+    const summaryTableHead = document.getElementById('summaryTableHead');
     const summaryTableBody = document.getElementById('summaryTableBody');
     const summarySearchBox = document.getElementById('summarySearchBox');
     
-    // Group data by department and service
+    // Get all unique years from the data and sort them
+    const allYears = [...new Set(filteredData.map(row => row['Année'] || new Date().getFullYear()))].sort();
+    
+    // Group data by department, service, and year
     const summaryData = {};
     
-    // Group by department and service
     filteredData.forEach(row => {
         const dept = row['Département'] || 'Non spécifié';
         const service = row['Service / Fonction'] || 'Non spécifié';
+        const year = row['Année'] || new Date().getFullYear();
         const key = `${dept}|${service}`;
         
         if (!summaryData[key]) {
             summaryData[key] = {
                 department: dept,
                 service: service,
+                yearlyData: {},
+                totalEmployees: 0,
+                totalSalary: 0
+            };
+        }
+        
+        if (!summaryData[key].yearlyData[year]) {
+            summaryData[key].yearlyData[year] = {
                 employeeIds: new Set(),
                 totalSalary: 0
             };
         }
         
-        // Add employee ID to set (to count unique employees)
-        summaryData[key].employeeIds.add(row._id);
+        // Add employee ID to set for counting unique employees
+        summaryData[key].yearlyData[year].employeeIds.add(row._id);
         // Add salary
+        summaryData[key].yearlyData[year].totalSalary += (row._totalSalary || 0);
+        
+        // Update totals
+        summaryData[key].totalEmployees = Array.from(
+            new Set(Object.values(summaryData[key].yearlyData)
+                .flatMap(yearData => Array.from(yearData.employeeIds)))
+        ).length;
         summaryData[key].totalSalary += (row._totalSalary || 0);
     });
     
@@ -1402,7 +1416,8 @@ function updateSummaryTable() {
     let summaryArray = Object.values(summaryData).map(item => ({
         department: item.department,
         service: item.service,
-        employeeCount: item.employeeIds.size,
+        yearlyData: item.yearlyData,
+        totalEmployees: item.totalEmployees,
         totalSalary: item.totalSalary
     })).sort((a, b) => b.totalSalary - a.totalSalary);
     
@@ -1415,38 +1430,196 @@ function updateSummaryTable() {
         );
     }
     
+    // Create dynamic table headers
+    summaryTableHead.innerHTML = '';
+    const headerRow = document.createElement('tr');
+    
+    // Basic info columns
+    headerRow.innerHTML = `
+        <th rowspan="2" style="vertical-align: middle;">Département</th>
+        <th rowspan="2" style="vertical-align: middle;">Service / Fonction</th>
+    `;
+    
+    // Year columns (with sub-headers for personnel and salary)
+    allYears.forEach(year => {
+        headerRow.innerHTML += `<th colspan="2" class="year-header">${year}</th>`;
+    });
+    
+    // Total columns
+    headerRow.innerHTML += `
+        <th colspan="2" class="year-header" style="background: rgba(102, 126, 234, 0.4);">TOTAL</th>
+    `;
+    
+    summaryTableHead.appendChild(headerRow);
+    
+    // Sub-header row
+    const subHeaderRow = document.createElement('tr');
+    allYears.forEach(year => {
+        subHeaderRow.innerHTML += `
+            <th class="year-subheader">Personnel</th>
+            <th class="year-subheader">Salaires</th>
+        `;
+    });
+    subHeaderRow.innerHTML += `
+        <th class="year-subheader" style="background: rgba(102, 126, 234, 0.4);">Personnel</th>
+        <th class="year-subheader" style="background: rgba(102, 126, 234, 0.4);">Salaires</th>
+    `;
+    summaryTableHead.appendChild(subHeaderRow);
+    
     // Clear existing rows
     summaryTableBody.innerHTML = '';
     
-    // Add new rows
+    // Add data rows
     summaryArray.forEach(item => {
         const tr = document.createElement('tr');
+        
+        // Department and Service columns
         tr.innerHTML = `
-            <td>${item.department}</td>
+            <td style="font-weight: 600;">${item.department}</td>
             <td>${item.service}</td>
-            <td class="count-cell">${item.employeeCount}</td>
-            <td class="salary-cell">${formatCurrency(item.totalSalary)}</td>
         `;
+        
+        // Year columns
+        allYears.forEach(year => {
+            const yearData = item.yearlyData[year];
+            const employeeCount = yearData ? yearData.employeeIds.size : 0;
+            const salary = yearData ? yearData.totalSalary : 0;
+            
+            tr.innerHTML += `
+                <td class="count-cell">${employeeCount || '-'}</td>
+                <td class="salary-cell">${salary > 0 ? formatCurrency(salary) : '-'}</td>
+            `;
+        });
+        
+        // Total columns
+        tr.innerHTML += `
+            <td class="count-cell" style="font-weight: bold; background: rgba(102, 126, 234, 0.1);">${item.totalEmployees}</td>
+            <td class="salary-cell" style="font-weight: bold; background: rgba(102, 126, 234, 0.1);">${formatCurrency(item.totalSalary)}</td>
+        `;
+        
         summaryTableBody.appendChild(tr);
     });
     
-    // Add totals row
+    // Add grand totals row
     if (summaryArray.length > 0) {
-        const totalEmployees = summaryArray.reduce((sum, item) => sum + item.employeeCount, 0);
-        const totalSalaries = summaryArray.reduce((sum, item) => sum + item.totalSalary, 0);
-        
         const totalRow = document.createElement('tr');
-        totalRow.style.borderTop = '2px solid rgba(102, 126, 234, 0.5)';
-        totalRow.style.backgroundColor = 'rgba(102, 126, 234, 0.1)';
+        totalRow.style.borderTop = '3px solid rgba(102, 126, 234, 0.7)';
+        totalRow.style.backgroundColor = 'rgba(102, 126, 234, 0.2)';
         totalRow.style.fontWeight = 'bold';
+        
         totalRow.innerHTML = `
-            <td colspan="2" style="text-align: center;">TOTAL</td>
-            <td class="count-cell">${totalEmployees}</td>
-            <td class="salary-cell">${formatCurrency(totalSalaries)}</td>
+            <td colspan="2" style="text-align: center; font-size: 1.1em;">📊 TOTAUX GÉNÉRAUX</td>
         `;
+        
+        // Calculate totals for each year
+        allYears.forEach(year => {
+            let yearEmployeeTotal = 0;
+            let yearSalaryTotal = 0;
+            
+            summaryArray.forEach(item => {
+                if (item.yearlyData[year]) {
+                    yearEmployeeTotal += item.yearlyData[year].employeeIds.size;
+                    yearSalaryTotal += item.yearlyData[year].totalSalary;
+                }
+            });
+            
+            totalRow.innerHTML += `
+                <td class="count-cell" style="background: rgba(102, 126, 234, 0.3);">${yearEmployeeTotal}</td>
+                <td class="salary-cell" style="background: rgba(102, 126, 234, 0.3);">${formatCurrency(yearSalaryTotal)}</td>
+            `;
+        });
+        
+        // Grand totals
+        const grandTotalEmployees = summaryArray.reduce((sum, item) => sum + item.totalEmployees, 0);
+        const grandTotalSalaries = summaryArray.reduce((sum, item) => sum + item.totalSalary, 0);
+        
+        totalRow.innerHTML += `
+            <td class="count-cell" style="background: rgba(102, 126, 234, 0.5); color: white;">${grandTotalEmployees}</td>
+            <td class="salary-cell" style="background: rgba(102, 126, 234, 0.5); color: white;">${formatCurrency(grandTotalSalaries)}</td>
+        `;
+        
         summaryTableBody.appendChild(totalRow);
     }
 }
+
+// NEW: Update Summary Table
+// function updateSummaryTable() {
+//     const summaryTableBody = document.getElementById('summaryTableBody');
+//     const summarySearchBox = document.getElementById('summarySearchBox');
+    
+//     // Group data by department and service
+//     const summaryData = {};
+    
+//     // Group by department and service
+//     filteredData.forEach(row => {
+//         const dept = row['Département'] || 'Non spécifié';
+//         const service = row['Service / Fonction'] || 'Non spécifié';
+//         const key = `${dept}|${service}`;
+        
+//         if (!summaryData[key]) {
+//             summaryData[key] = {
+//                 department: dept,
+//                 service: service,
+//                 employeeIds: new Set(),
+//                 totalSalary: 0
+//             };
+//         }
+        
+//         // Add employee ID to set (to count unique employees)
+//         summaryData[key].employeeIds.add(row._id);
+//         // Add salary
+//         summaryData[key].totalSalary += (row._totalSalary || 0);
+//     });
+    
+//     // Convert to array and sort by total salary
+//     let summaryArray = Object.values(summaryData).map(item => ({
+//         department: item.department,
+//         service: item.service,
+//         employeeCount: item.employeeIds.size,
+//         totalSalary: item.totalSalary
+//     })).sort((a, b) => b.totalSalary - a.totalSalary);
+    
+//     // Apply search filter if there's a search term
+//     if (summarySearchBox && summarySearchBox.value) {
+//         const searchTerm = summarySearchBox.value.toLowerCase();
+//         summaryArray = summaryArray.filter(item => 
+//             item.department.toLowerCase().includes(searchTerm) || 
+//             item.service.toLowerCase().includes(searchTerm)
+//         );
+//     }
+    
+//     // Clear existing rows
+//     summaryTableBody.innerHTML = '';
+    
+//     // Add new rows
+//     summaryArray.forEach(item => {
+//         const tr = document.createElement('tr');
+//         tr.innerHTML = `
+//             <td>${item.department}</td>
+//             <td>${item.service}</td>
+//             <td class="count-cell">${item.employeeCount}</td>
+//             <td class="salary-cell">${formatCurrency(item.totalSalary)}</td>
+//         `;
+//         summaryTableBody.appendChild(tr);
+//     });
+    
+//     // Add totals row
+//     if (summaryArray.length > 0) {
+//         const totalEmployees = summaryArray.reduce((sum, item) => sum + item.employeeCount, 0);
+//         const totalSalaries = summaryArray.reduce((sum, item) => sum + item.totalSalary, 0);
+        
+//         const totalRow = document.createElement('tr');
+//         totalRow.style.borderTop = '2px solid rgba(102, 126, 234, 0.5)';
+//         totalRow.style.backgroundColor = 'rgba(102, 126, 234, 0.1)';
+//         totalRow.style.fontWeight = 'bold';
+//         totalRow.innerHTML = `
+//             <td colspan="2" style="text-align: center;">TOTAL</td>
+//             <td class="count-cell">${totalEmployees}</td>
+//             <td class="salary-cell">${formatCurrency(totalSalaries)}</td>
+//         `;
+//         summaryTableBody.appendChild(totalRow);
+//     }
+// }
 
         // Update KPI cards
         function updateKPIs() {
